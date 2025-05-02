@@ -4,20 +4,25 @@ import pandas as pd
 import concurrent.futures
 import os
 from urllib3.exceptions import InsecureRequestWarning
-import smtplib
-from email.message import EmailMessage
 from email_alert import email_alert
+import json
 
 # dezactivare avertizari SSL
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
 
 class SiteMonitor:
-    def __init__(self, input_file=None, check_interval=5, timeout=10, email_notification=True, email_to="1panescu.cosmin@gmail.com"):
+    def __init__(self, input_file=None, check_interval=5, timeout=10, email_notification=True, email_to=None):
         self.sites = []
         self.check_interval = check_interval
         self.timeout = timeout
         self.email_notification = email_notification
-        self.email_to = email_to
+        
+        if email_to is None:
+            # preluare email din configurare
+            config = load_config()
+            self.email_to = config.get("email_to", "1panescu.cosmin@gmail.com")
+        else:
+            self.email_to = email_to
         
         if input_file:
             self.load_sites_from_file(input_file)
@@ -137,7 +142,10 @@ class SiteMonitor:
         
         return results
     
-    def display_status(self, results, email_notification=True, email_to="1panescu.cosmin@gmail.com"):
+    def display_status(self, results, email_notification=None):
+        if email_notification is None:
+            email_notification = self.email_notification
+        
         down_sites = [r for r in results if r['status'] == 'DOWN']
         
         if down_sites:
@@ -155,9 +163,8 @@ class SiteMonitor:
                 body += f"\nStatusul verificarii: {len(results) - len(down_sites)} site-uri online, {len(down_sites)} site-uri offline"
                 
                 try:
-                    # Folosim funcția importată în loc de metoda clasei
-                    email_alert(subject, body, email_to)
-                    print(f"✉️ Email trimis la {email_to}")
+                    email_alert(subject, body, self.email_to)
+                    print(f"✉️  Email trimis la {self.email_to}")
                 except Exception as e:
                     print(f"❌ Eroare la trimiterea email-ului: {e}")
 
@@ -187,7 +194,7 @@ class SiteMonitor:
                 # filtrare doar site-uri noi care au picat
                 if new_down_sites:
                     new_down_results = [r for r in results if r['status'] == 'DOWN' and r['site'] in new_down_sites]
-                    self.display_status(new_down_results, self.email_notification, self.email_to)
+                    self.display_status(new_down_results, self.email_notification)
                 else:
                     # afisare status curent pt. toate site-urile
                     self.display_status(results, False)
@@ -200,7 +207,6 @@ class SiteMonitor:
             print("\nMonitorizarea a fost oprita")
 
 def get_available_files():
-    """Returnează listele de fișiere CSV, Excel și TXT din directorul curent."""
     current_dir = os.path.dirname(os.path.abspath(__file__))
     files = os.listdir(current_dir)
     csv_files = [f for f in files if f.endswith('.csv')]
@@ -209,64 +215,141 @@ def get_available_files():
     
     return csv_files, excel_files, txt_files
 
+def load_config(file_name="default_config.json"):
+    default_config = {
+        "input_file": "site.txt",
+        "check_interval": 5,
+        "timeout": 10,
+        "email_notification": True,
+        "email_to": "1panescu.cosmin@gmail.com"
+    }
+    
+    try:
+        with open(file_name, "r") as config_file:
+            return json.load(config_file)
+    except FileNotFoundError:
+        print(f"ℹ️ Nu a fost gasit fisierul {file_name}. Se vor folosi valorile implicite")
+        return default_config
+    except json.JSONDecodeError:
+        print(f"⚠️ Eroare la citirea fisierului {file_name}. Se vor folosi valorile implicite")
+        return default_config
+    except Exception as e:
+        print(f"⚠️ Eroare: {e}. Se vor folosi valorile implicite")
+        return default_config
+
+def save_config(config_data, file_name="default_config.json"):
+    try:
+        with open(file_name, "w") as config_file:
+            json.dump(config_data, config_file, indent=4)
+        print(f"✅ Configurarile au fost salvate în {file_name}")
+        return True
+    except Exception as e:
+        print(f"❌ Eroare la salvarea configurarilor: {e}")
+        return False
+
 if __name__ == "__main__":
-    print("=== MONITOR DE VERIFICARE SITE-URI ===")
+    print("\n=== MONITOR SITE-URI ===")
     
-    # obtinere fisiere dispoibile
-    csv_files, excel_files, txt_files = get_available_files()
+    # configurarile existente
+    config = load_config()
     
-    print("\nFisiere disponibile in folderul curent:")
+    print("\nDoresti sa folosesti configurarile default? (da/nu, implicit: da):")
+    use_default = input("> ").lower() != "nu"
     
-    if csv_files:
-        print("\nFisiere CSV:")
-        for i, file in enumerate(csv_files, 1):
-            print(f"{i}. {file}")
+    if use_default:
+        # configurari default din fisier   
+        file_name = config["input_file"]
+        check_interval = config["check_interval"]
+        timeout = config["timeout"]
+        email_notification = config["email_notification"]
+        email_to = config["email_to"]
+        
+        print(f"\nSe folosesc configurarile default:")
+        print(f"Fisier de input: {file_name}")
+        print(f"Interval de verificare: {check_interval} secunde")
+        print(f"Timeout: {timeout} secunde")
+        print(f"Notificari email: {'Da' if email_notification else 'Nu'}")
+        print(f"Email catre: {email_to}")
+        
+    else:
+        # obtinere fisiere disponibile
+        csv_files, excel_files, txt_files = get_available_files()
+        
+        print("\nFisiere disponibile in folderul curent:")
+        
+        if csv_files:
+            print("\nFisiere CSV:")
+            for i, file in enumerate(csv_files, 1):
+                print(f"{i}. {file}")
+        
+        if excel_files:
+            print("\nFisiere Excel:")
+            for i, file in enumerate(excel_files, 1):
+                print(f"{i}. {file}")
+        
+        if txt_files:
+            print("\nFisiere Text:")
+            for i, file in enumerate(txt_files, 1):
+                print(f"{i}. {file}")
+        
+        if not (csv_files or excel_files or txt_files):
+            print("Nu au fost gasite fisiere CSV, Excel sau TXT in directorul curent.")
+            exit(1)
+        
+        print(f"\nIntrodu numele fisierului (inclusiv extensia. (implicit: {config['input_file']}):")
+        file_input = input("> ")
+        file_name = file_input.strip() if file_input.strip() else config["input_file"]
+        
+        print(f"Introdu intervalul de verificare in secunde (implicit: {config['check_interval']} secunde):")
+        interval_input = input("> ")
+        check_interval = int(interval_input) if interval_input.strip() else config["check_interval"]
+        
+        print(f"Introdu timeout-ul pentru cereri in secunde (implicit: {config['timeout']} secunde):")
+        timeout_input = input("> ")
+        timeout = int(timeout_input) if timeout_input.strip() else config["timeout"]
+        
+        print(f"Doresti notificari pe email cand un site cade? (da/nu, implicit: {'da' if config['email_notification'] else 'nu'}):")
+        email_input = input("> ").lower()
+        if email_input:
+            email_notification = email_input != "nu"
+        else:
+            email_notification = config["email_notification"]
+        
+        email_to = config["email_to"]
+        if email_notification:
+            print(f"Introdu adresa de email pentru notificari (implicit: {email_to}):")
+            email_to_input = input("> ")
+            if email_to_input.strip():
+                email_to = email_to_input
+        
+        print("Doresti salvarea acestor configurari ca default pentru viitor? (da/nu, implicit: nu):")
+        save_config_input = input("> ").lower() == "da"
+        
+        if save_config_input:
+            new_config = {
+                "input_file": file_name,
+                "check_interval": check_interval,
+                "timeout": timeout,
+                "email_notification": email_notification,
+                "email_to": email_to
+            }
+            save_config(new_config)
     
-    if excel_files:
-        print("\nFisiere Excel:")
-        for i, file in enumerate(excel_files, 1):
-            print(f"{i}. {file}")
-    
-    if txt_files:
-        print("\nFisiere Text:")
-        for i, file in enumerate(txt_files, 1):
-            print(f"{i}. {file}")
-    
-    if not (csv_files or excel_files or txt_files):
-        print("Nu au fost gasite fisiere CSV, Excel sau TXT in directorul curent.")
-        exit(1)
-    
-    print("\nIntroduceyi numele fisierului (inclusiv extensia):")
-    file_name = input("> ")
-    
+    # verificare existenta fisier
     current_dir = os.path.dirname(os.path.abspath(__file__))
     file_path = os.path.join(current_dir, file_name)
     
-    # verificare existenta fisier
     if not os.path.exists(file_path):
         print(f"Eroare: Fisierul '{file_name}' nu exista in directorul curent.")
         exit(1)
     
-    print("\nIntroduceti intervalul de verificare in secunde (implicit: 5 secunde):")
-    interval_input = input("> ")
-    check_interval = int(interval_input) if interval_input.strip() else 5
-    
-    print("\nIntroduceti timeout-ul pentru cereri in secunde (implicit: 10 secunde):")
-    timeout_input = input("> ")
-    timeout = int(timeout_input) if timeout_input.strip() else 10
-    
-    print("\nDoriti sa primiti notificari pe email cand un site cade? (da/nu, implicit: da):")
-    email_input = input("> ").lower()
-    email_notification = email_input != "nu"
-    
-    email_to = "1panescu.cosmin@gmail.com" 
-    if email_notification:
-        print(f"\nIntroduceti adresa de email pentru notificari (implicit: {email_to}):")
-        email_to_input = input("> ")
-        if email_to_input.strip():
-            email_to = email_to_input
-
-    monitor = SiteMonitor(input_file=file_path, check_interval=check_interval, timeout=timeout)
+    monitor = SiteMonitor(
+        input_file=file_path, 
+        check_interval=check_interval, 
+        timeout=timeout,
+        email_notification=email_notification,
+        email_to=email_to
+    )
     
     # verificare existenta site-uri
     if not monitor.sites:
