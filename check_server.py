@@ -142,7 +142,7 @@ class SiteMonitor:
         
         return results
     
-    def display_status(self, results, email_notification=None):
+    def display_status(self, results, email_notification=None, alert_sites=None):
         if email_notification is None:
             email_notification = self.email_notification
         
@@ -151,15 +151,19 @@ class SiteMonitor:
         if down_sites:
             print("\n--- SITE-URI INDISPONIBILE ---")
             down_sites_text = ""
-            for site in down_sites:
+            
+            sites_to_display = [r for r in down_sites if alert_sites is None or r['site'] in alert_sites]
+            
+            for site in sites_to_display:
                 site_info = f"❌ {site['site']}: {site.get('error', 'Eroare necunoscuta')}"
                 print(site_info)
                 down_sites_text += site_info + "\n"
             
             # alerta prin email
             if email_notification and down_sites_text:
-                subject = f"ALERTA: {len(down_sites)} site-uri indisponibile"
+                subject = f"Notificare: {len(sites_to_display)} site-uri indisponibile"
                 body = f"Urmatoarele site-uri sunt indisponibile:\n\n{down_sites_text}\n"
+                
                 body += f"\nStatusul verificarii: {len(results) - len(down_sites)} site-uri online, {len(down_sites)} site-uri offline"
                 
                 try:
@@ -194,7 +198,7 @@ class SiteMonitor:
                 # filtrare doar site-uri noi care au picat
                 if new_down_sites:
                     new_down_results = [r for r in results if r['status'] == 'DOWN' and r['site'] in new_down_sites]
-                    self.display_status(new_down_results, self.email_notification)
+                    self.display_status(results, self.email_notification, alert_sites=new_down_sites)
                 else:
                     # afisare status curent pt. toate site-urile
                     self.display_status(results, False)

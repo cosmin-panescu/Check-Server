@@ -23,6 +23,3 @@ def email_alert(subject, body, to):
     server.login(user, password)
     server.send_message(msg)
     server.quit()
-
-if __name__ == "__main__":
-    email_alert("Test Subject", "Test Body", "1panescu.cosmin@gmail.com")
