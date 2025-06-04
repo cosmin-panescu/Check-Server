@@ -1,7 +1,7 @@
 {
-    "input_file": "site.txt",
-    "check_interval": 4,
-    "timeout": 5,
-    "email_notification": true,
-    "email_to": "1panescu.cosmin@gmail.com"
+  "input_file": "site.txt",
+  "check_interval": 15,
+  "timeout": 5,
+  "email_notification": true,
+  "email_to": "1panescu.cosmin@gmail.com"
 }

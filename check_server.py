@@ -6,9 +6,88 @@ import os
 from urllib3.exceptions import InsecureRequestWarning
 from email_alert import email_alert
 import json
+from datetime import datetime
 
 # dezactivare avertizari SSL
 requests.packages.urllib3.disable_warnings(InsecureRequestWarning)
+
+# coduri culori ANSI
+class Colors:
+    RED = '\033[91m'
+    GREEN = '\033[92m'
+    YELLOW = '\033[93m'
+    BLUE = '\033[94m'
+    MAGENTA = '\033[95m'
+    CYAN = '\033[96m'
+    WHITE = '\033[97m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+    END = '\033[0m'
+    GRAY = '\033[90m'
+    BRIGHT_GREEN = '\033[32m'
+    BRIGHT_RED = '\033[31m'
+    BRIGHT_YELLOW = '\033[33m'
+    BRIGHT_BLUE = '\033[34m'
+
+# header
+def print_header(text, color=Colors.CYAN):
+    width = 60
+    border = "═" * width
+    print(f"\n{color}{Colors.BOLD}╔{border}╗{Colors.END}")
+    print(f"{color}{Colors.BOLD}║{text.center(width)}║{Colors.END}")
+    print(f"{color}{Colors.BOLD}╚{border}╝{Colors.END}")
+
+# chenar pentru text
+def print_box(text, color=Colors.WHITE):
+    lines = text.split('\n')
+    max_width = max(len(line) for line in lines) + 4
+    
+    print(f"{color}┌{'─' * (max_width - 2)}┐{Colors.END}")
+    for line in lines:
+        print(f"{color}│ {line.ljust(max_width - 4)} │{Colors.END}")
+    print(f"{color}└{'─' * (max_width - 2)}┘{Colors.END}")
+
+def print_status_line(site, status, response_time=None, error=None, status_code=None):
+    # linie status 
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    
+    if status == 'UP':
+        status_icon = f"{Colors.BRIGHT_GREEN}●{Colors.END}"
+        status_text = f"{Colors.BRIGHT_GREEN}{Colors.BOLD}UP{Colors.END}"
+        site_text = f"{Colors.WHITE}{site}{Colors.END}"
+        
+        if response_time:
+            time_color = Colors.GREEN if response_time < 1 else Colors.YELLOW if response_time < 3 else Colors.RED
+            response_text = f"{time_color}{response_time}s{Colors.END}"
+        else:
+            response_text = ""
+            
+        if status_code:
+            code_text = f"{Colors.GRAY}({status_code}){Colors.END}"
+        else:
+            code_text = ""
+            
+        print(f"{Colors.GRAY}[{timestamp}]{Colors.END} {status_icon} {site_text.ljust(35)} {status_text} {response_text} {code_text}")
+    else:
+        status_icon = f"{Colors.BRIGHT_RED}●{Colors.END}"
+        status_text = f"{Colors.BRIGHT_RED}{Colors.BOLD}DOWN{Colors.END}"
+        site_text = f"{Colors.WHITE}{site}{Colors.END}"
+        error_text = f"{Colors.RED}{error or 'Eroare necunoscuta'}{Colors.END}"
+        
+        print(f"{Colors.GRAY}[{timestamp}]{Colors.END} {status_icon} {site_text.ljust(35)} {status_text} - {error_text}")
+
+# separator linie
+def print_separator(char="─", length=80, color=Colors.GRAY):
+    print(f"{color}{char * length}{Colors.END}")
+
+# rezumat status final
+def print_summary(total_sites, up_sites, down_sites):
+    print(f"\n{Colors.BOLD}📊 REZUMAT:{Colors.END}")
+    print(f"┌─────────────────────────────────┐")
+    print(f"│ Total site-uri: {Colors.CYAN}{Colors.BOLD}{str(total_sites).rjust(15)}{Colors.END} │")
+    print(f"│ Site-uri online: {Colors.GREEN}{Colors.BOLD}{str(up_sites).rjust(14)}{Colors.END} │")
+    print(f"│ Site-uri offline: {Colors.RED}{Colors.BOLD}{str(down_sites).rjust(13)}{Colors.END} │")
+    print(f"└─────────────────────────────────┘")
 
 class SiteMonitor:
     def __init__(self, input_file=None, check_interval=5, timeout=10, email_notification=True, email_to=None):
@@ -78,9 +157,9 @@ class SiteMonitor:
             else:
                 raise ValueError("Formatul fisierului nu este suportat. Foloseste CSV, Excel sau TXT.")
                 
-            print(f"S-au incarcat {len(self.sites)} site-uri din fisierul {input_file}")
+            print(f"{Colors.GREEN}✅ S-au incarcat {Colors.BOLD}{len(self.sites)}{Colors.END}{Colors.GREEN} site-uri din fisierul {Colors.CYAN}{input_file}{Colors.END}")
         except Exception as e:
-            print(f"Eroare la incarcarea fisierului: {e}")
+            print(f"{Colors.RED}❌ Eroare la incarcarea fisierului: {Colors.BOLD}{e}{Colors.END}")
             raise
     
     def check_site(self, site):
@@ -130,6 +209,8 @@ class SiteMonitor:
     def check_all_sites(self):
         results = []
         
+        print(f"{Colors.YELLOW}🔄 Verificare în curs...{Colors.END}")
+        
         with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
             future_to_site = {executor.submit(self.check_site, site): site for site in self.sites}
             for future in concurrent.futures.as_completed(future_to_site):
@@ -138,7 +219,7 @@ class SiteMonitor:
                     results.append(result)
                 except Exception as e:
                     site = future_to_site[future]
-                    print(f"Eroare la verificarea site-ului {site['domain'] or site['ip']}: {e}")
+                    print(f"{Colors.RED}❌ Eroare la verificarea site-ului {site['domain'] or site['ip']}: {e}{Colors.END}")
         
         return results
     
@@ -147,17 +228,29 @@ class SiteMonitor:
             email_notification = self.email_notification
         
         down_sites = [r for r in results if r['status'] == 'DOWN']
+        up_sites = [r for r in results if r['status'] == 'UP']
         
+        os.system('cls' if os.name == 'nt' else 'clear')
+        
+        print_header("🌐 MONITOR SITE-URI - STATUS LIVE", Colors.CYAN)
+
+        # afisare site-uri offline
         if down_sites:
-            print("\n--- SITE-URI INDISPONIBILE ---")
-            down_sites_text = ""
+            print(f"\n{Colors.BRIGHT_RED}{Colors.BOLD}🔴 SITE-URI OFFLINE ({len(down_sites)}){Colors.END}")
+            print_separator("─", 80, Colors.RED)
             
             sites_to_display = [r for r in down_sites if alert_sites is None or r['site'] in alert_sites]
+            down_sites_text = ""
             
             for site in sites_to_display:
-                site_info = f"❌ {site['site']}: {site.get('error', 'Eroare necunoscuta')}"
-                print(site_info)
-                down_sites_text += site_info + "\n"
+                print_status_line(
+                    site['site'], 
+                    site['status'], 
+                    site.get('response_time'), 
+                    site.get('error'), 
+                    site.get('status_code')
+                )
+                down_sites_text += f"❌ {site['site']}: {site.get('error', 'Eroare necunoscuta')}\n"
             
             # alerta prin email
             if email_notification and down_sites_text:
@@ -168,19 +261,40 @@ class SiteMonitor:
                 
                 try:
                     email_alert(subject, body, self.email_to)
-                    print(f"✉️  Email trimis la {self.email_to}")
+                    print(f"\n{Colors.CYAN}✉️  Email trimis la {Colors.BOLD}{self.email_to}{Colors.END}")
                 except Exception as e:
-                    print(f"❌ Eroare la trimiterea email-ului: {e}")
+                    print(f"\n{Colors.RED}❌ Eroare la trimiterea email-ului: {Colors.BOLD}{e}{Colors.END}")
+        else:
+            print(f"\n{Colors.BRIGHT_GREEN}{Colors.BOLD}🎉 TOATE SITE-URILE SUNT ONLINE!{Colors.END}")
+            print_separator("─", 80, Colors.GREEN)
+        
+        # rezumat
+        print_summary(len(results), len(up_sites), len(down_sites))
+        
+        # rezumat configuratie
+        current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        print(f"\n{Colors.GRAY}⏰ Ultima verificare: {current_time}")
+        print(f"🔄 Urmatoarea verificare în {self.check_interval} secunde")
+        print(f"⚙️  Timeout: {self.timeout}s | Email: {'Activ' if self.email_notification else 'Inactiv'}")
+        print(f"💡 Apasă Ctrl+C pentru a opri monitorizarea{Colors.END}")
 
     def start_monitoring(self):
-        print(f"Monitorizarea a inceput pentru {len(self.sites)} site-uri")
-        print(f"Verificare la fiecare {self.check_interval} secunde")
+        print_header("🚀 PORNIRE MONITOR", Colors.MAGENTA)
+        
+        config_text = f"📊 Site-uri monitorizate: {len(self.sites)}\n"
+        config_text += f"⏱️  Interval verificare: {self.check_interval} secunde\n"
+        config_text += f"⏰ Timeout cereri: {self.timeout} secunde\n"
+        
         if self.email_notification:
-            print(f"Alertele prin email sunt ACTIVATE si vor fi trimise la: {self.email_to}")
+            config_text += f"📧 Alerte email: ACTIVATE\n"
+            config_text += f"📬 Destinatar: {self.email_to}"
         else:
-            print("Alertele prin email sunt DEZACTIVATE")
-        print("Apasa Ctrl+C pentru a opri monitorizarea")
-        print("-" * 50)
+            config_text += f"📧 Alerte email: DEZACTIVATE"
+        
+        print_box(config_text, Colors.YELLOW)
+        
+        print(f"\n{Colors.BRIGHT_GREEN}🎯 Monitorizarea a inceput!{Colors.END}")
+        print_separator("═", 80, Colors.CYAN)
         
         # evidenta pentru site-urile offline anterior
         previous_down_sites = set()
@@ -206,9 +320,15 @@ class SiteMonitor:
                 # actualizare lista site-uri offline
                 previous_down_sites = current_down_sites
                 
-                time.sleep(self.check_interval)
+                # countdown pana la urmatoarea verificare
+                for i in range(self.check_interval, 0, -1):
+                    print(f"\r{Colors.GRAY}⏳ Urmatoarea verificare în: {Colors.BOLD}{i:2d}{Colors.END}{Colors.GRAY} secunde...{Colors.END}", end='', flush=True)
+                    time.sleep(1)
+                print()  # Linie nouă după countdown
+                
         except KeyboardInterrupt:
-            print("\nMonitorizarea a fost oprita")
+            print(f"\n\n{Colors.YELLOW}⏹️ Monitorizarea a fost oprita de utilizator{Colors.END}")
+            print_header("👋 LA REVEDERE!", Colors.MAGENTA)
 
 def get_available_files():
     current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -232,33 +352,41 @@ def load_config(file_name="default_config.json"):
         with open(file_name, "r") as config_file:
             return json.load(config_file)
     except FileNotFoundError:
-        print(f"ℹ️ Nu a fost gasit fisierul {file_name}. Se vor folosi valorile implicite")
+        print(f"{Colors.BLUE}ℹ️ Nu a fost gasit fisierul {file_name}. Se vor folosi valorile implicite{Colors.END}")
         return default_config
     except json.JSONDecodeError:
-        print(f"⚠️ Eroare la citirea fisierului {file_name}. Se vor folosi valorile implicite")
+        print(f"{Colors.YELLOW}⚠️ Eroare la citirea fisierului {file_name}. Se vor folosi valorile implicite{Colors.END}")
         return default_config
     except Exception as e:
-        print(f"⚠️ Eroare: {e}. Se vor folosi valorile implicite")
+        print(f"{Colors.YELLOW}⚠️ Eroare: {e}. Se vor folosi valorile implicite{Colors.END}")
         return default_config
 
 def save_config(config_data, file_name="default_config.json"):
     try:
         with open(file_name, "w") as config_file:
             json.dump(config_data, config_file, indent=4)
-        print(f"✅ Configurarile au fost salvate în {file_name}")
+        print(f"{Colors.GREEN}✅ Configurarile au fost salvate în {Colors.BOLD}{file_name}{Colors.END}")
         return True
     except Exception as e:
-        print(f"❌ Eroare la salvarea configurarilor: {e}")
+        print(f"{Colors.RED}❌ Eroare la salvarea configurarilor: {Colors.BOLD}{e}{Colors.END}")
         return False
 
+def print_file_list(title, files, color):
+    if files:
+        print(f"\n{color}{Colors.BOLD}📁 {title}:{Colors.END}")
+        for i, file in enumerate(files, 1):
+            print(f"   {color}{i}.{Colors.END} {Colors.WHITE}{file}{Colors.END}")
+
 if __name__ == "__main__":
-    print("\n=== MONITOR SITE-URI ===")
+    os.system('cls' if os.name == 'nt' else 'clear')
+    
+    print_header("🌐 MONITOR SITE-URI", Colors.CYAN)
     
     # configurarile existente
     config = load_config()
     
-    print("\nDoresti sa folosesti configurarile default? (da/nu, implicit: da):")
-    use_default = input("> ").lower() != "nu"
+    print(f"\n{Colors.YELLOW}🔧 Doresti sa folosesti configurarile default? {Colors.BOLD}(da/nu, implicit: da){Colors.END}")
+    use_default = input(f"{Colors.CYAN}> {Colors.END}").lower() != "nu"
     
     if use_default:
         # configurari default din fisier   
@@ -268,52 +396,43 @@ if __name__ == "__main__":
         email_notification = config["email_notification"]
         email_to = config["email_to"]
         
-        print(f"\nSe folosesc configurarile default:")
-        print(f"Fisier de input: {file_name}")
-        print(f"Interval de verificare: {check_interval} secunde")
-        print(f"Timeout: {timeout} secunde")
-        print(f"Notificari email: {'Da' if email_notification else 'Nu'}")
-        print(f"Email catre: {email_to}")
+        print(f"\n{Colors.GREEN}✅ Se folosesc configurarile default:{Colors.END}")
+        config_text = f"📄 Fisier de input: {file_name}\n"
+        config_text += f"⏱️  Interval de verificare: {check_interval} secunde\n"
+        config_text += f"⏰ Timeout: {timeout} secunde\n"
+        config_text += f"📧 Notificari email: {'Da' if email_notification else 'Nu'}\n"
+        config_text += f"📬 Email catre: {email_to}"
+        
+        print_box(config_text, Colors.GREEN)
         
     else:
         # obtinere fisiere disponibile
         csv_files, excel_files, txt_files = get_available_files()
         
-        print("\nFisiere disponibile in folderul curent:")
+        print_header("📁 FISIERE DISPONIBILE", Colors.BLUE)
         
-        if csv_files:
-            print("\nFisiere CSV:")
-            for i, file in enumerate(csv_files, 1):
-                print(f"{i}. {file}")
-        
-        if excel_files:
-            print("\nFisiere Excel:")
-            for i, file in enumerate(excel_files, 1):
-                print(f"{i}. {file}")
-        
-        if txt_files:
-            print("\nFisiere Text:")
-            for i, file in enumerate(txt_files, 1):
-                print(f"{i}. {file}")
+        print_file_list("Fisiere CSV", csv_files, Colors.GREEN)
+        print_file_list("Fisiere Excel", excel_files, Colors.YELLOW)
+        print_file_list("Fisiere Text", txt_files, Colors.CYAN)
         
         if not (csv_files or excel_files or txt_files):
-            print("Nu au fost gasite fisiere CSV, Excel sau TXT in directorul curent.")
+            print(f"{Colors.RED}❌ Nu au fost gasite fisiere CSV, Excel sau TXT in directorul curent.{Colors.END}")
             exit(1)
         
-        print(f"\nIntrodu numele fisierului (inclusiv extensia. (implicit: {config['input_file']}):")
-        file_input = input("> ")
+        print(f"\n{Colors.YELLOW}📄 Introdu numele fișierului (inclusiv extensia. implicit: {Colors.BOLD}{config['input_file']}{Colors.END}{Colors.YELLOW}):{Colors.END}")
+        file_input = input(f"{Colors.CYAN}> {Colors.END}")
         file_name = file_input.strip() if file_input.strip() else config["input_file"]
         
-        print(f"Introdu intervalul de verificare in secunde (implicit: {config['check_interval']} secunde):")
-        interval_input = input("> ")
+        print(f"\n{Colors.YELLOW}⏱️  Introdu intervalul de verificare în secunde (implicit: {Colors.BOLD}{config['check_interval']}{Colors.END}{Colors.YELLOW} secunde):{Colors.END}")
+        interval_input = input(f"{Colors.CYAN}> {Colors.END}")
         check_interval = int(interval_input) if interval_input.strip() else config["check_interval"]
         
-        print(f"Introdu timeout-ul pentru cereri in secunde (implicit: {config['timeout']} secunde):")
-        timeout_input = input("> ")
+        print(f"\n{Colors.YELLOW}⏰ Introdu timeout-ul pentru cereri în secunde (implicit: {Colors.BOLD}{config['timeout']}{Colors.END}{Colors.YELLOW} secunde):{Colors.END}")
+        timeout_input = input(f"{Colors.CYAN}> {Colors.END}")
         timeout = int(timeout_input) if timeout_input.strip() else config["timeout"]
         
-        print(f"Doresti notificari pe email cand un site cade? (da/nu, implicit: {'da' if config['email_notification'] else 'nu'}):")
-        email_input = input("> ").lower()
+        print(f"\n{Colors.YELLOW}📧 Dorești notificări pe email când un site cade? (da/nu, implicit: {Colors.BOLD}{'da' if config['email_notification'] else 'nu'}{Colors.END}{Colors.YELLOW}):{Colors.END}")
+        email_input = input(f"{Colors.CYAN}> {Colors.END}").lower()
         if email_input:
             email_notification = email_input != "nu"
         else:
@@ -321,13 +440,13 @@ if __name__ == "__main__":
         
         email_to = config["email_to"]
         if email_notification:
-            print(f"Introdu adresa de email pentru notificari (implicit: {email_to}):")
-            email_to_input = input("> ")
+            print(f"\n{Colors.YELLOW}📬 Introdu adresa de email pentru notificari (implicit: {Colors.BOLD}{email_to}{Colors.END}{Colors.YELLOW}):{Colors.END}")
+            email_to_input = input(f"{Colors.CYAN}> {Colors.END}")
             if email_to_input.strip():
                 email_to = email_to_input
         
-        print("Doresti salvarea acestor configurari ca default pentru viitor? (da/nu, implicit: nu):")
-        save_config_input = input("> ").lower() == "da"
+        print(f"\n{Colors.YELLOW}💾 Doresti salvarea acestor configurari ca default pentru viitor? (da/nu, implicit: nu):{Colors.END}")
+        save_config_input = input(f"{Colors.CYAN}> {Colors.END}").lower() == "da"
         
         if save_config_input:
             new_config = {
@@ -344,7 +463,7 @@ if __name__ == "__main__":
     file_path = os.path.join(current_dir, file_name)
     
     if not os.path.exists(file_path):
-        print(f"Eroare: Fisierul '{file_name}' nu exista in directorul curent.")
+        print(f"{Colors.RED}❌ Eroare: Fisierul '{Colors.BOLD}{file_name}{Colors.END}{Colors.RED}' nu exista in directorul curent.{Colors.END}")
         exit(1)
     
     monitor = SiteMonitor(
@@ -357,7 +476,11 @@ if __name__ == "__main__":
     
     # verificare existenta site-uri
     if not monitor.sites:
-        print("Eroare: Nu au fost gasite site-uri in fisierul specificat")
+        print(f"{Colors.RED}❌ Eroare: Nu au fost gasite site-uri in fisierul specificat{Colors.END}")
         exit(1)
+    
+    # Pauză scurtă pentru a permite utilizatorului să vadă configurările
+    print(f"\n{Colors.GRAY}🚀 Pornirea monitorizarii in 3 secunde...{Colors.END}")
+    time.sleep(3)
     
     monitor.start_monitoring()
